@@ -3,29 +3,29 @@ import pandas as pd
 import numpy as np
 import altair as alt
 
-# --- PAGE CONFIG ---
+# 1. PAGE CONFIG (Must be at the very top)
 st.set_page_config(page_title="InsightAI V1", layout="wide")
+
 st.title("🛡️ InsightAI: Sales Integrity & Performance")
 
-# --- SIDEBAR ---
+# 2. SIDEBAR - The only place to upload
 st.sidebar.header("Data Control Center")
 uploaded_file = st.sidebar.file_uploader("Upload CRM Export (CSV)", type="csv")
 
-if uploaded_file:
+# 3. THE GATE - Only run if a file is uploaded
+if uploaded_file is not None:
     try:
-        # 1. LOAD DATA
+        # --- LOAD & CLEAN ---
         df_raw = pd.read_csv(uploaded_file)
-        
-        # 2. CLEAN COLUMNS (From your Colab)
         df = df_raw.copy()
+        # Clean column names (Colab Logic)
         df.columns = (df.columns.str.lower().str.replace(" ", "_").str.replace("(", "").str.replace(")", ""))
         
-        # 3. DATE & CONVERSION PREP
+        # --- PREP DATA (Colab Logic) ---
         df["followupdate"] = pd.to_datetime(df["followupdate"], errors="coerce")
         df["login_date"] = pd.to_datetime(df.get("login_date"), errors="coerce")
         today = pd.Timestamp.today()
         
-        # 4. FUNNEL MAPPING (From your Colab)
         stage_map = {
             "Lead Assigned": "Qualified", "Lead Qualified": "Qualified",
             "App not started": "APNS", "App Start": "App Start",
@@ -36,12 +36,9 @@ if uploaded_file:
         df["funnel_stage"] = df["prospectstage"].map(stage_map)
         df.loc[df["login_date"].notna(), "funnel_stage"] = "Login"
 
-        # 5. STAGE RANK & CUMULATIVE FUNNEL
         stage_order = {"Qualified": 1, "APNS": 2, "App Start": 3, "RTS": 4, "Bank Prospect": 5, "Login": 6}
         
-        # Helper for Max Stage (Your Colab Logic)
         def get_max_stage(row):
-            # Check dates in reverse order of funnel
             dates = [("Login", "login_date"), ("Bank Prospect", "bank_prospect_date"), 
                      ("RTS", "rts_date"), ("App Start", "app_start_date"), 
                      ("APNS", "app_not_started_date"), ("Qualified", "qualified_date")]
@@ -53,7 +50,7 @@ if uploaded_file:
         df["stage_rank"] = df["max_stage"].map(stage_order)
         df["converted"] = (df["max_stage"] == "Login").astype(int)
 
-        # Build funnel_df
+        # --- CALCULATE FUNNEL ---
         funnel_order = ["Qualified", "APNS", "App Start", "RTS", "Bank Prospect", "Login"]
         funnel_cumulative = [df[df["stage_rank"] >= stage_order[s]].shape[0] for s in funnel_order]
         funnel_df = pd.DataFrame({"stage": funnel_order, "leads": funnel_cumulative})
@@ -69,7 +66,7 @@ if uploaded_file:
         with col2:
             st.bar_chart(funnel_df.set_index("stage")["leads"])
 
-        # 6. GLOBAL LIFT INSIGHTS (Your Loop)
+        # --- GLOBAL LIFT INSIGHTS ---
         st.divider()
         st.header("🌍 Growth Driver (Lift Analysis)")
         features = ["nf_task_fin", "nf_type_fin", "owneridname", "srt_bucket"]
@@ -84,9 +81,9 @@ if uploaded_file:
         
         if insights:
             top_i = sorted(insights, key=lambda x: x['lift'], reverse=True)[0]
-            st.success(f"**Insight:** {top_i['feature']} is your top lever. **{top_i['best']}** converts **{top_i['lift']:.2f}x** better than {top_i['worst']}.")
+            st.success(f"**Insight:** {top_i['feature'].upper()} is your top lever. **{top_i['best']}** converts **{top_i['lift']:.2f}x** better than {top_i['worst']}.")
 
-        # 7. INTEGRITY AUDIT (The Visuals)
+        # --- INTEGRITY AUDIT ---
         st.divider()
         st.header("🛡️ Compliance Audit (Top 5 RMs)")
         
@@ -111,8 +108,15 @@ if uploaded_file:
                     st.success("100% Compliance")
 
     except Exception as e:
-        st.error(f"🔥 Error processing data: {e}")
-        st.info("Ensure your CSV has columns like 'prospectstage', 'owneridname', and the date columns from your Colab.")
+        st.error(f"🔥 Error: {e}")
+        st.info("Check your CSV columns. Need: prospectstage, owneridname, and date columns.")
 
 else:
-    st.info("👋 Welcome Founder. Upload your CRM CSV in the sidebar to run the V1 Audit.")
+    # This is what shows up when the app launches (No Error!)
+    st.info("👋 Welcome Founder. Please upload your CRM CSV in the sidebar to generate the V1 Audit.")
+    st.markdown("""
+    ### V1 Audit Capabilities:
+    * **Funnel Mapping:** Automatically calculates drop-offs between stages.
+    * **Lift Analysis:** Identifies which RM or Task Type drives the most conversions.
+    * **Integrity Check:** Flags process violations (Lost leads, Missed followups).
+    """)
